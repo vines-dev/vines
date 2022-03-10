@@ -13,3 +13,5 @@ Cargo.lock
 # Added by cargo
 
 /target
+example/calculator/target/
+example/calculator/**/*.rs.bk
