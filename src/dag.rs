@@ -12,14 +12,13 @@ use serde_json::value::RawValue;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use std::time::SystemTime;
+use tower::util::BoxCloneService;
 use tower_service::Service;
-use tower::{ServiceBuilder, BoxError, util::BoxCloneService};
 #[async_trait]
 pub trait AnyHandler {
     type Req: Send + Sync;
@@ -203,16 +202,10 @@ pub struct Vines<E: Send + Sync> {
     ops: HashMap<String, Box<DAGOp>>,
     async_op_mapping: HashMap<
         String,
-        Arc<
-            Mutex<
-                dyn Service<
-                        (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
-                        Response = OpResult,
-                        Error = &'static str,
-                        Future = AsyncHandlerFuture,
-                    > + Send
-                    + Sync,
-            >,
+        BoxCloneService<
+            (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
+            OpResult,
+            &'static str,
         >,
     >,
     // cache
@@ -250,7 +243,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
     {
         self.async_op_mapping.insert(
             op_name.to_string(),
-            Arc::new(Mutex::new(Vines::<E>::wrap(handler))),
+            BoxCloneService::new(Vines::<E>::wrap(handler)),
         );
     }
 
@@ -268,7 +261,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
         for pair in handlers_ganerator() {
             self.async_op_mapping.insert(
                 pair.0.to_string(),
-                Arc::new(Mutex::new(Vines::<E>::wrap(pair.1))),
+                BoxCloneService::new(Vines::<E>::wrap(pair.1)),
             );
             self.op_config_generator_repo
                 .insert(pair.0.to_string(), pair.2);
@@ -415,7 +408,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                     Arc::new(
                         self.async_op_mapping
                             .iter()
-                            .map(|(key, val)| (key.clone(), Arc::clone(val)))
+                            .map(|(key, val)| (key.clone(), Arc::new(Mutex::new(val.clone()))))
                             .collect(),
                     ),
                     Arc::clone(&args),
@@ -465,13 +458,11 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 String,
                 Arc<
                     Mutex<
-                        dyn Service<
-                                (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
-                                Response = OpResult,
-                                Error = &'static str,
-                                Future = AsyncHandlerFuture,
-                            > + Send
-                            + Sync,
+                        BoxCloneService<
+                            (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
+                            OpResult,
+                            &'static str,
+                        >,
                     >,
                 >,
             >,
@@ -523,11 +514,14 @@ impl<E: 'static + Send + Sync> Vines<E> {
         });
 
         let params_ptr = op_config_repo.get(&op).unwrap();
-        let async_handle_fn = Arc::clone(
+        let async_handle_fn = Arc::new(Mutex::new(
             async_op_mapping
                 .get(&ops.get(&op).unwrap().op_config.op)
-                .unwrap(),
-        );
+                .unwrap()
+                .lock()
+                .unwrap()
+                .clone(),
+        ));
         let arg_ptr = Arc::clone(&args);
 
         let now = SystemTime::now();
@@ -560,30 +554,6 @@ impl<E: 'static + Send + Sync> Vines<E> {
             return Arc::new(OpResult::default());
         }
         res
-    }
-
-    // TODO: String to int
-    #[async_recursion]
-    async fn dfs_op2<'a>(
-        async_op_mapping: Vec<
-            BoxCloneService<
-                i32,
-                OpResult,
-                &'static str,
-            >,
-        >,
-        args: Arc<E>,
-    ) -> Arc<OpResult> {
-        let mut p = async_op_mapping[0].clone();
-        let async_res = Arc::new(
-            async {
-                let v = p.call(0);
-                v.await.unwrap()
-            }
-            .await,
-        );
-
-        return async_res;
     }
 }
 
