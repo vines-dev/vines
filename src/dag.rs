@@ -12,13 +12,14 @@ use serde_json::value::RawValue;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use std::time::SystemTime;
 use tower_service::Service;
-
+use tower::{ServiceBuilder, BoxError, util::BoxCloneService};
 #[async_trait]
 pub trait AnyHandler {
     type Req: Send + Sync;
@@ -425,12 +426,6 @@ impl<E: 'static + Send + Sync> Vines<E> {
                             .map(|(key, val)| (key.clone(), Arc::clone(val)))
                             .collect(),
                     ),
-                    Arc::new(
-                        self.has_op_config_repo
-                            .iter()
-                            .map(|(key, val)| (key.clone(), *val))
-                            .collect(),
-                    ),
                 )
                 .boxed()
                 .shared(),
@@ -450,6 +445,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
         results
     }
 
+    // TODO: String to int
     #[async_recursion]
     async fn dfs_op<'a>(
         dag_futures: Arc<
@@ -462,7 +458,6 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 >,
             >,
         >,
-        // have_handled: Arc<Mutex<HashSet<String>>>,
         ops: Arc<HashMap<String, Arc<DAGOp>>>,
         op: String,
         async_op_mapping: Arc<
@@ -484,7 +479,6 @@ impl<E: 'static + Send + Sync> Vines<E> {
         args: Arc<E>,
         cached_repo: Arc<dashmap::DashMap<String, (Arc<OpResult>, SystemTime)>>,
         op_config_repo: Arc<HashMap<String, Arc<dyn Any + std::marker::Send + Sync>>>,
-        has_op_config_repo: Arc<HashMap<String, bool>>,
     ) -> Arc<OpResult> {
         let mut deps = futures::stream::FuturesOrdered::new();
         if ops.get(&op).unwrap().prevs.is_empty() {
@@ -502,14 +496,12 @@ impl<E: 'static + Send + Sync> Vines<E> {
                             prev.to_string(),
                             Vines::<E>::dfs_op(
                                 Arc::clone(&dag_futures),
-                                // Arc::clone(&have_handled),
                                 Arc::clone(&ops),
                                 prev_ptr.to_string(),
                                 Arc::clone(&async_op_mapping),
                                 Arc::clone(&args),
                                 Arc::clone(&cached_repo),
                                 Arc::clone(&op_config_repo),
-                                Arc::clone(&has_op_config_repo),
                             )
                             .boxed()
                             .shared(),
@@ -568,6 +560,30 @@ impl<E: 'static + Send + Sync> Vines<E> {
             return Arc::new(OpResult::default());
         }
         res
+    }
+
+    // TODO: String to int
+    #[async_recursion]
+    async fn dfs_op2<'a>(
+        async_op_mapping: Vec<
+            BoxCloneService<
+                i32,
+                OpResult,
+                &'static str,
+            >,
+        >,
+        args: Arc<E>,
+    ) -> Arc<OpResult> {
+        let mut p = async_op_mapping[0].clone();
+        let async_res = Arc::new(
+            async {
+                let v = p.call(0);
+                v.await.unwrap()
+            }
+            .await,
+        );
+
+        return async_res;
     }
 }
 
