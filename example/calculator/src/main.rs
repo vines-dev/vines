@@ -7,31 +7,33 @@ use std::fs::File;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Mutex;
-// use anyflow::FlowResult;
-use anyflow;
-use anyflow::dag::OpResults;
-use anyflow::resgiter_node;
-use anyflow::AnyHandler;
-use anyflow::AsyncHandler;
-use anyflow::HandlerInfo;
-use anyflow::HandlerType;
-use anyflow::OpResult;
+// use vines::FlowResult;
 use async_trait::async_trait;
-use macros::AnyFlowNode;
+use macros::{VinesOpParams, VinesOp};
 use std::any::Any;
+use vines;
+use vines::dag::OpResults;
+use vines::resgiter_node;
+use vines::Op;
+use vines::OpInfo;
+use vines::OpResult;
+use vines::OpType;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Val {
     val: i32,
 }
 
+struct Req {}
+
 #[derive(Deserialize, Default)]
 struct Placeholder {} // TODO: remove
 
-#[AnyFlowNode(Val)]
-fn calc<E: Send + Sync>(graph_args: Arc<E>, p: Val, input: Arc<OpResults>) -> OpResult {
+#[VinesOpParams(Val)]
+fn calc(graph_args: Arc<Req>, p: Val, input: Arc<OpResults>) -> OpResult {
     let mut r = OpResult::default();
     let mut sum: i32 = 0;
+    println!("helllo {:?}", input);
     for idx in 0..input.len() {
         match input.get::<i32>(idx) {
             Ok(val) => sum += val,
@@ -47,58 +49,20 @@ struct P {
     pp: String,
 }
 
-#[AnyFlowNode]
-fn any_demo<E: Send + Sync>(_graph_args: Arc<E>, input: Arc<OpResults>) -> OpResult {
+#[VinesOp]
+fn any_demo<E: Send + Sync>(graph_args: Arc<Req>, input: Arc<OpResults>) -> OpResult {
     OpResult::ok(P::default())
 }
 
-fn smol_main() {
-    let mut dag = anyflow::dag::Flow::<i32, i32>::new();
+fn main() {
+    let mut dag = vines::dag::Vines::<Req>::new();
     let data = fs::read_to_string("dag.json").expect("Unable to read file");
-    println!("{:?}", dag.init(&data));
-    // dag.register("calc", Arc::new(calc));
-    for _i in 0..1000 {
-        let my_dag = dag.make_flow(Arc::new(1));
-        // println!("{:?}", my_dag.await[0].get::<i32>("res"));
-        smol::block_on(my_dag);
-    }
-}
-
-fn tokio_main() {
-    let mut dag = anyflow::dag::Flow::<i32, i32>::new();
-    let data = fs::read_to_string("dag.json").expect("Unable to read file");
-    println!("{:?}", dag.init(&data));
-    // dag.register("calc", Arc::new(calc));
-    // dag.async_register("calc", async_calc);
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .build()
         .unwrap();
-    for _i in 0..10000 {
-        let my_dag = dag.make_flow(Arc::new(1));
-        // println!("{:?}", my_dag.await[0].get::<i32>("res"));
-        rt.block_on(my_dag);
-    }
-}
-
-fn async_std_main() {
-    let mut dag = anyflow::dag::Flow::<i32, i32>::new();
-    let data = fs::read_to_string("dag.json").expect("Unable to read file");
-    // resgiter_node![calc, any_demo];
     dag.multi_async_register(resgiter_node![calc, any_demo]);
-    let my_dag = dag.make_flow(Arc::new(1));
-    let r = task::block_on(my_dag);
-    println!("result {:?}", r[0].get::<i32>());
-}
-
-fn main() {
-    async_std_main();
-    // tokio_main();
-    let q: i32 = 5;
-    let mut a = anyflow::OpResult::Ok(Arc::new(Mutex::new(5)));
-    let p = a.get::<Mutex<i32>>();
-    // let mut u = ;
-    *p.unwrap().lock().unwrap() = 6;
-    println!("{:?}", a.get::<Mutex<i32>>());
-    // let aa = resgiter_node![async_calc_handler_fn];
+    println!("{:?}", dag.init(&data));
+    let my_dag = dag.make_dag(Arc::new(Req{}));
+    rt.block_on(my_dag);
 }

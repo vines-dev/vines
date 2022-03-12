@@ -6,8 +6,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyflow = { path = "../../../anyflow"}
-macros = { path = "../../../anyflow/macros"}
+vines = { path = "../../../vines"}
+macros = { path = "../../../vines/macros"}
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" , features = ["raw_value"] }
 tokio = {version = "1.12.0", features = ["full"] }

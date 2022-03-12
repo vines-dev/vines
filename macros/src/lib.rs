@@ -1,5 +1,5 @@
 extern crate proc_macro;
-use anyflow;
+use vines;
 use proc_macro::TokenStream;
 use proc_macro::*;
 use proc_macro2::Span;
@@ -47,10 +47,10 @@ fn get_type(val: &FnArg) -> PathSegment {
 }
 
 #[proc_macro_attribute]
-pub fn AnyFlowNodeWithParams(params: TokenStream, code: TokenStream) -> TokenStream {
+pub fn VinesOpParams(params: TokenStream, code: TokenStream) -> TokenStream {
     let pp = code.clone();
     let qq = code.clone();
-    let input = parse_macro_input!(pp as ItemFn);
+    let input = parse_macro_input!(pp as ItemFn);   
     let input2 = parse_macro_input!(qq as ItemFn);
     let input_args = input2.sig.inputs.iter().cloned().collect::<Vec<FnArg>>();
     println!("input2 {:?}", input_args[0]);
@@ -74,7 +74,7 @@ pub fn AnyFlowNodeWithParams(params: TokenStream, code: TokenStream) -> TokenStr
     let config_type = get_type(&input_args[1]);
 
     let fn_content2 = quote! {
-        let handle = |#first_arg: #first_arg_type, #second_arg: &#config_type, #third_arg: Arc<anyflow::OpResults>| {
+        let handle = |#first_arg: #first_arg_type, #second_arg: &#config_type, #third_arg: Arc<vines::OpResults>| {
             #fn_itself
         };
         let p = params.downcast_ref::<#config_type>().unwrap();
@@ -85,28 +85,28 @@ pub fn AnyFlowNodeWithParams(params: TokenStream, code: TokenStream) -> TokenStr
         struct #fn_name {}
 
         impl #fn_name {
-            fn generate_config() -> anyflow::HandlerInfo{
-                HandlerInfo{
-                name: stringify!(#fn_name),
-                method_type: anyflow::HandlerType::Async,
-                has_config: true,
+            fn generate_config() -> vines::OpInfo{
+                OpInfo{
+                    name: stringify!(#fn_name),
+                    method_type: vines::OpType::Op,
+                    has_config: true,
                 }
             }
         }
 
         #[async_trait]
-        impl AnyHandler for #fn_name {
+        impl Op for #fn_name {
             type Req = #first_arg_type;
-            fn config_generate(input: Box<RawValue>)
+            fn gen_config(input: Box<RawValue>)
                 -> Arc<(dyn Any + std::marker::Send + Sync)> {
                 let c : Arc<#config_type> = Arc::new(serde_json::from_str(input.get()).unwrap());
                 c
             }
 
-            async fn async_calc2(
+            async fn call(
                 graph_args: #first_arg_type,
                 params: Arc<Any + Send + Sync>,
-                input: Arc<anyflow::OpResults>,
+                input: Arc<vines::OpResults>,
             ) -> OpResult {
                 #fn_content2
             }
@@ -139,7 +139,7 @@ pub fn SimpleNode(params: TokenStream, code: TokenStream) -> TokenStream {
     }
     let first_arg_type = get_type(&input_args[0]);
     let first_arg = get_val(&input_args[0]);
-    let mut config_type = quote! {anyflow::EmptyPlaceHolder}; // make a default one
+    let mut config_type = quote! {vines::EmptyPlaceHolder}; // make a default one
 
     let mut extract_args = vec![quote! {}];
     for i in 1..input_args.len() {
@@ -162,27 +162,27 @@ pub fn SimpleNode(params: TokenStream, code: TokenStream) -> TokenStream {
         struct #fn_name {}
 
         impl #fn_name {
-            fn generate_config() -> anyflow::HandlerInfo{
-                HandlerInfo{
+            fn generate_config() -> vines::OpInfo{
+                OpInfo{
                 name: stringify!(#fn_name),
-                method_type: anyflow::HandlerType::Async,
+                method_type: vines::OpType::Op,
                 has_config: true,
                 }
             }
         }
 
         #[async_trait]
-        impl AnyHandler for #fn_name {
+        impl Op for #fn_name {
             type Req = #first_arg_type;
-            fn config_generate(input: Box<RawValue>)
+            fn gen_config(input: Box<RawValue>)
                 -> Arc<(dyn Any + std::marker::Send + Sync)> {
-                Arc::new(anyflow::EmptyPlaceHolder::default())
+                Arc::new(vines::EmptyPlaceHolder::default())
             }
 
-            async fn async_calc2(
+            async fn call(
                 graph_args: #first_arg_type,
                 params: Arc<Any + Send + Sync>,
-                input: Arc<anyflow::OpResults>,
+                input: Arc<vines::OpResults>,
             ) -> OpResult {
                 OpResult::default()
             }
@@ -193,7 +193,7 @@ pub fn SimpleNode(params: TokenStream, code: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn AnyFlowNode(params: TokenStream, code: TokenStream) -> TokenStream {
+pub fn VinesOp(params: TokenStream, code: TokenStream) -> TokenStream {
     let pp = code.clone();
     let qq = code.clone();
     let input = parse_macro_input!(pp as ItemFn);
@@ -218,7 +218,7 @@ pub fn AnyFlowNode(params: TokenStream, code: TokenStream) -> TokenStream {
     let first_arg_type = get_type(&input_args[0]);
 
     let mut fn_content = quote! {
-        let handle = |#first_arg, #second_arg: Arc<anyflow::OpResults>| {
+        let handle = |#first_arg, #second_arg: Arc<vines::OpResults>| {
             #fn_itself
         };
         handle(graph_args, input)
@@ -231,27 +231,27 @@ pub fn AnyFlowNode(params: TokenStream, code: TokenStream) -> TokenStream {
         struct #fn_name {}
 
         impl #fn_name {
-            fn generate_config() -> anyflow::HandlerInfo{
-                HandlerInfo{
+            fn generate_config() -> vines::OpInfo{
+                OpInfo{
                 name: stringify!(#fn_name),
-                method_type: anyflow::HandlerType::Async,
+                method_type: vines::OpType::Op,
                 has_config: true,
                 }
             }
         }
 
         #[async_trait]
-        impl AnyHandler for #fn_name {
+        impl Op for #fn_name {
             type Req = #first_arg_type;
-            fn config_generate(input: Box<RawValue>)
+            fn gen_config(input: Box<RawValue>)
                 -> Arc<(dyn Any + std::marker::Send + Sync)> {
-                    Arc::new(anyflow::EmptyPlaceHolder::default())
+                    Arc::new(vines::EmptyPlaceHolder::default())
             }
 
-            async fn async_calc2(
+            async fn call(
                 graph_args: #first_arg_type,
                 params: Arc<Any + Send + Sync>,
-                input: Arc<anyflow::OpResults>,
+                input: Arc<vines::OpResults>,
             ) -> OpResult {
                 #fn_content2
             }

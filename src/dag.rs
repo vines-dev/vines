@@ -19,27 +19,27 @@ use std::time::Duration;
 use std::time::SystemTime;
 use tower::util::BoxCloneService;
 use tower_service::Service;
-#[async_trait]
-pub trait AnyHandler {
-    type Req: Send + Sync;
-    fn config_generate(input: Box<RawValue>) -> Arc<dyn Send + Any + Sync>;
 
-    async fn async_calc2(
-        _graph_args: Self::Req,
+#[async_trait]
+pub trait Op {
+    type Req: Send + Sync;
+    fn gen_config(input: Box<RawValue>) -> Arc<dyn Send + Any + Sync>;
+
+    async fn call(
+        args: Self::Req,
         params: Arc<dyn Any + Send + Sync>,
         input: Arc<OpResults>,
     ) -> OpResult;
 }
 
-pub struct HandlerInfo {
+pub struct OpInfo {
     pub name: &'static str,
-    pub method_type: HandlerType,
+    pub method_type: OpType,
     pub has_config: bool,
 }
 
-pub enum HandlerType {
-    Async,
-    Sync,
+pub enum OpType {
+    Op,
 }
 
 #[derive(Deserialize, Default)]
@@ -217,6 +217,14 @@ pub struct Vines<E: Send + Sync> {
         String,
         Arc<dyn Fn(Box<RawValue>) -> Arc<dyn Any + std::marker::Send + Sync> + Send + Sync>,
     >,
+    // middlewares: HashMap<
+    //     String,
+    //     BoxCloneService<
+    //         (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
+    //         OpResult,
+    //         &'static str,
+    //     >,
+    // >,
 }
 
 impl<E: 'static + Send + Sync> Default for Vines<E> {
@@ -234,12 +242,13 @@ impl<E: 'static + Send + Sync> Vines<E> {
             op_config_repo: HashMap::new(),
             op_config_generator_repo: HashMap::new(),
             has_op_config_repo: HashMap::new(),
+            // middlewares: HashMap::new(),
         }
     }
 
     pub fn async_register<H>(&mut self, op_name: &str, handler: H)
     where
-        H: AsyncHandler<E>,
+        H: AsyncOp<E>,
     {
         self.async_op_mapping.insert(
             op_name.to_string(),
@@ -256,7 +265,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
             bool,
         )>,
     ) where
-        H: AsyncHandler<E>,
+        H: AsyncOp<E>,
     {
         for pair in handlers_ganerator() {
             self.async_op_mapping.insert(
@@ -271,7 +280,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
 
     fn wrap<H>(handler: H) -> AsyncContainer<H>
     where
-        H: AsyncHandler<E>,
+        H: AsyncOp<E>,
     {
         AsyncContainer { handler }
     }
@@ -435,6 +444,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
         while let Some(item) = leaves.next().await {
             results.push(item);
         }
+        println!("here {:?}", results);
         results
     }
 
@@ -558,12 +568,12 @@ impl<E: 'static + Send + Sync> Vines<E> {
 }
 
 #[async_trait]
-pub trait AsyncHandler<E>: Clone + Sync + Send + Sized + 'static {
+pub trait AsyncOp<E>: Clone + Sync + Send + Sized + 'static {
     async fn call(self, q: Arc<E>, e: Arc<dyn Any + Sync + Send>, w: Arc<OpResults>) -> OpResult;
 }
 
 #[async_trait]
-impl<F, Fut, E> AsyncHandler<E> for F
+impl<F, Fut, E> AsyncOp<E> for F
 where
     F: FnOnce(Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>) -> Fut
         + Clone
@@ -588,29 +598,29 @@ unsafe impl<B> Sync for AsyncContainer<B> {}
 
 impl<B, E> Service<(Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>)> for AsyncContainer<B>
 where
-    B: AsyncHandler<E>,
+    B: AsyncOp<E>,
 {
     type Response = OpResult;
     type Error = &'static str;
-    type Future = AsyncHandlerFuture;
+    type Future = AsyncOpFuture;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn call(&mut self, q: (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>)) -> Self::Future {
-        let ft = AsyncHandler::call(self.handler.clone(), q.0, q.1, q.2);
-        AsyncHandlerFuture { inner: ft }
+        let ft = AsyncOp::call(self.handler.clone(), q.0, q.1, q.2);
+        AsyncOpFuture { inner: ft }
     }
 }
 
 #[pin_project]
-pub struct AsyncHandlerFuture {
+pub struct AsyncOpFuture {
     #[pin]
     inner: BoxFuture<'static, OpResult>,
 }
 
-impl Future for AsyncHandlerFuture {
+impl Future for AsyncOpFuture {
     type Output = Result<OpResult, &'static str>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
