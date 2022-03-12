@@ -15,3 +15,5 @@ Cargo.lock
 /target
 example/calculator/target/
 example/calculator/**/*.rs.bk
+example/web-service/target/
+example/web-service/**/*.rs.bk
