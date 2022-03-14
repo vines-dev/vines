@@ -18,6 +18,7 @@ use vines::Op;
 use vines::OpInfo;
 use vines::OpResult;
 use vines::OpType;
+use tokio::sync::mpsc;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Val {
@@ -33,7 +34,7 @@ struct Placeholder {} // TODO: remove
 fn calc(graph_args: Arc<Req>, p: Val, input: Arc<OpResults>) -> OpResult {
     let mut r = OpResult::default();
     let mut sum: i32 = 0;
-    println!("helllo {:?}", input);
+    println!("helllo {:?}", p.val);
     for idx in 0..input.len() {
         match input.get::<i32>(idx) {
             Ok(val) => sum += val,
@@ -54,15 +55,35 @@ fn any_demo<E: Send + Sync>(graph_args: Arc<Req>, input: Arc<OpResults>) -> OpRe
     OpResult::ok(P::default())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut dag = vines::dag::Vines::<Req>::new();
     let data = fs::read_to_string("dag.json").expect("Unable to read file");
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .build()
-        .unwrap();
+    // let rt = tokio::runtime::Builder::new_multi_thread()
+    //     .worker_threads(4)
+    //     .build()
+    //     .unwrap();
     dag.multi_async_register(resgiter_node![calc, any_demo]);
     println!("{:?}", dag.init(&data));
-    let my_dag = dag.make_dag(Arc::new(Req{}));
-    rt.block_on(my_dag);
+
+    let (tx, mut rx) = mpsc::channel(100);
+    // let my_dag = dag.make_dag(Arc::new(Req{}));
+    // rt.block_on(my_dag);
+
+    static num : i32= 10000;
+
+    tokio::spawn(async move {
+        for i in 0..num {
+            if let Err(_) = tx.send(i).await {
+                // println!("receiver dropped");
+                let v = dag.make_dag(Arc::new(Req{})).await;
+                return;
+            }
+        }
+        
+    });
+
+    while let Some(i) = rx.recv().await {
+        println!("got = {}", i);
+    }
 }
