@@ -404,9 +404,11 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 >,
             >,
         > = Arc::new(Mutex::new(HashMap::new()));
+        // > = Arc::new(HashMap::new());
 
         leaf_ops.iter().for_each(|leaf| {
             let dag_futures_ptr_copy = Arc::clone(&dag_futures_ptr);
+            // (*dag_futures_ptr).insert(
             dag_futures_ptr.lock().unwrap().insert(
                 leaf.to_string(),
                 Vines::<E>::dfs_op(
@@ -437,6 +439,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
         let mut leaves: futures::stream::FuturesOrdered<_> = leaf_ops
             .iter()
             .map(|leaf| dag_futures_ptr.lock().unwrap().get(&*leaf).unwrap().clone())
+            // .map(|leaf| dag_futures_ptr.get(&*leaf).unwrap().clone())
             .collect();
 
         let mut results = Vec::with_capacity(leaves.len());
@@ -444,7 +447,6 @@ impl<E: 'static + Send + Sync> Vines<E> {
         while let Some(item) = leaves.next().await {
             results.push(item);
         }
-        println!("here {:?}", results);
         results
     }
 
@@ -461,6 +463,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 >,
             >,
         >,
+        // have_handled: Arc<Mutex<HashSet<String>>>,
         ops: Arc<HashMap<String, Arc<DAGOp>>>,
         op: String,
         async_op_mapping: Arc<
@@ -492,8 +495,10 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 .iter()
                 .map(|prev| {
                     if !dag_futures.lock().unwrap().contains_key(&prev.to_string()) {
+                        // if !dag_futures.contains_key(&prev.to_string()) {
                         let prev_ptr = Arc::new(prev);
                         dag_futures.lock().unwrap().insert(
+                            // dag_futures.insert(
                             prev.to_string(),
                             Vines::<E>::dfs_op(
                                 Arc::clone(&dag_futures),
@@ -509,6 +514,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                         );
                     }
                     dag_futures.lock().unwrap().get(prev).unwrap().clone()
+                    // dag_futures.get(prev).unwrap().clone()
                 })
                 .collect()
         };
@@ -524,46 +530,32 @@ impl<E: 'static + Send + Sync> Vines<E> {
         });
 
         let params_ptr = op_config_repo.get(&op).unwrap();
-        let async_handle_fn = Arc::new(Mutex::new(
-            async_op_mapping
-                .get(&ops.get(&op).unwrap().op_config.op)
-                .unwrap()
-                .lock()
-                .unwrap()
-                .clone(),
-        ));
+        let mut async_handle_fn = async_op_mapping
+            .get(&ops.get(&op).unwrap().op_config.op)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .clone();
         let arg_ptr = Arc::clone(&args);
 
-        let now = SystemTime::now();
-        let res = if ops.get(&op).unwrap().op_config.cachable
-            && cached_repo.contains_key(&op)
-            && now.duration_since(cached_repo.get(&op).unwrap().1).unwrap()
-                > Duration::from_secs(60)
-        {
-            Arc::clone(&cached_repo.get(&op).unwrap().0)
-        } else {
-            let async_res = Arc::new(
-                async {
-                    let v = async_handle_fn.lock().unwrap().call((
-                        Arc::clone(&arg_ptr),
-                        params_ptr.clone(),
-                        Arc::clone(&dep_results),
-                    ));
-                    v.await.unwrap()
+        Arc::new(
+            async move {
+                match async_handle_fn
+                    .call((arg_ptr, params_ptr.clone(), dep_results))
+                    .await
+                {
+                    Ok(async_result) => {
+                        if async_result.is_err() && ops.get(&op).unwrap().op_config.necessary {
+                            return OpResult::default();
+                        } else {
+                            async_result
+                        }
+                    }
+                    Err(e) => OpResult::Err(e.to_string()),
                 }
-                .await,
-            );
-
-            if ops.get(&op).unwrap().op_config.cachable {
-                cached_repo.insert(op.clone(), (Arc::clone(&async_res), SystemTime::now()));
             }
-            async_res
-        };
-
-        if res.is_err() && ops.get(&op).unwrap().op_config.necessary {
-            return Arc::new(OpResult::default());
-        }
-        res
+            .await,
+        )
     }
 }
 

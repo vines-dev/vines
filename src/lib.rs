@@ -1,11 +1,11 @@
 pub mod dag;
 pub use dag::AsyncOp;
 pub use dag::EmptyPlaceHolder;
-pub use dag::OpType;
 pub use dag::Op;
 pub use dag::OpInfo;
 pub use dag::OpResult;
 pub use dag::OpResults;
+pub use dag::OpType;
 pub use dag::Vines;
 
 #[macro_export]
