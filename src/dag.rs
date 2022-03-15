@@ -15,7 +15,7 @@ use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, RwLock};
 use std::task::{Context, Poll};
-use std::time::Duration;
+
 use std::time::SystemTime;
 use tower::util::BoxCloneService;
 use tower_service::Service;
@@ -200,14 +200,14 @@ pub struct DAGOp {
 impl<E: Send + Sync> Clone for Vines<E> {
     fn clone(&self) -> Self {
         Vines {
-            ops: self.ops.iter().map(|v| Arc::clone(v)).collect(),
+            ops: self.ops.iter().map(Arc::clone).collect(),
             async_op_mapping: self
                 .async_op_mapping
                 .iter()
                 .map(|(k, v)| (k.clone(), Mutex::new(v.lock().unwrap().clone())))
                 .collect(),
             cached_repo: self.cached_repo.clone(),
-            op_config_repo: self.op_config_repo.iter().map(|v| Arc::clone(v)).collect(),
+            op_config_repo: self.op_config_repo.iter().map(Arc::clone).collect(),
             has_op_config_repo: self.has_op_config_repo.clone(),
             op_config_generator_repo: self
                 .op_config_generator_repo
@@ -369,12 +369,12 @@ impl<E: 'static + Send + Sync> Vines<E> {
                         op_config.name, dep
                     ));
                 }
-                ops_tmp[ops_table.get(&op_config.name.clone()).unwrap().clone()]
+                ops_tmp[(*ops_table.get(&op_config.name.clone()).unwrap())]
                     .prevs
-                    .push(ops_table.get(&dep.clone()).unwrap().clone());
-                ops_tmp[ops_table.get(&dep.clone()).unwrap().clone()]
+                    .push(*ops_table.get(&dep.clone()).unwrap());
+                ops_tmp[(*ops_table.get(&dep.clone()).unwrap())]
                     .nexts
-                    .push(ops_table.get(&op_config.name).unwrap().clone());
+                    .push(*ops_table.get(&op_config.name).unwrap());
             }
 
             if *self.has_op_config_repo.get(&op_config.op).unwrap() {
@@ -391,7 +391,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
             .ops
             .iter()
             .filter(|op| op.prevs.is_empty())
-            .map(|op| ops_table.get(&op.op_config.name.clone()).unwrap().clone())
+            .map(|op| *ops_table.get(&op.op_config.name.clone()).unwrap())
         {
             if !self.validate_dag(&mut HashSet::new(), root) {
                 return Err(("have cycle in the dag").to_string());
@@ -410,7 +410,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
             return true;
         }
 
-        path.insert(cur.clone());
+        path.insert(cur);
         for next in &op.nexts {
             if !self.validate_dag(&mut path.clone(), *next) {
                 return false;
@@ -424,13 +424,13 @@ impl<E: 'static + Send + Sync> Vines<E> {
             .ops
             .iter()
             .zip(0..self.ops.len())
-            .filter(|(op, idx)| op.nexts.is_empty())
-            .map(|(op, idx)| idx)
+            .filter(|(op, _idx)| op.nexts.is_empty())
+            .map(|(_op, idx)| idx)
             .collect();
 
         // let have_handled: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
         let ops_ptr: Arc<Vec<Arc<DAGOp>>> =
-            Arc::new(self.ops.iter().map(|v| Arc::clone(v)).collect());
+            Arc::new(self.ops.iter().map(Arc::clone).collect());
         let dag_futures_ptr: Arc<
             RwLock<
                 HashMap<
@@ -469,7 +469,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                     Arc::new(
                         self.op_config_repo
                             .iter()
-                            .map(|val| Arc::clone(val))
+                            .map(Arc::clone)
                             .collect(),
                     ),
                 )
@@ -550,7 +550,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 .prevs
                 .iter()
                 .map(|prev| {
-                    if !dag_futures.read().unwrap().contains_key(&prev) {
+                    if !dag_futures.read().unwrap().contains_key(prev) {
                         // if !dag_futures.contains_key(&prev.to_string()) {
                         // let prev_ptr = Arc::new(prev);
                         dag_futures.write().unwrap().insert(
@@ -607,7 +607,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 {
                     Ok(async_result) => {
                         if async_result.is_err() && ops[op].op_config.necessary {
-                            return OpResult::default();
+                            OpResult::default()
                         } else {
                             async_result
                         }
