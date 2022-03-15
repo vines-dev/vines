@@ -9,8 +9,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 // use vines::FlowResult;
 use async_trait::async_trait;
-use macros::{VinesOpParams, VinesOp};
+use macros::{VinesOp, VinesOpParams};
 use std::any::Any;
+use tokio::sync::mpsc;
 use vines;
 use vines::dag::OpResults;
 use vines::resgiter_node;
@@ -18,7 +19,6 @@ use vines::Op;
 use vines::OpInfo;
 use vines::OpResult;
 use vines::OpType;
-use tokio::sync::mpsc;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 struct Val {
@@ -70,18 +70,19 @@ async fn main() {
     // let my_dag = dag.make_dag(Arc::new(Req{}));
     // rt.block_on(my_dag);
 
-    static num : i32= 10000;
+    static num: i32 = 10000;
 
-    tokio::spawn(async move {
-        for i in 0..num {
-            if let Err(_) = tx.send(i).await {
-                // println!("receiver dropped");
-                let v = dag.make_dag(Arc::new(Req{})).await;
-                return;
-            }
-        }
-        
-    });
+    for i in 0..num {
+        let cloned_dag = dag.clone();
+        let tx2 = tx.clone();
+        tokio::spawn(async move {
+            // let v = cloned_dag.make_dag(Arc::new(Req {})).await;
+            let fut = cloned_dag.make_dag(Arc::new(Req {}));
+            let v = fut.await;
+            println!("{:?}", v);
+            tx2.send(0).await;
+        });
+    }
 
     while let Some(i) = rx.recv().await {
         println!("got = {}", i);

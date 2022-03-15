@@ -197,17 +197,63 @@ pub struct DAGOp {
     nexts: Vec<String>,
 }
 
-#[derive(Clone)]
+impl<E: Send + Sync> Clone for Vines<E> {
+    fn clone(&self) -> Self {
+        Vines {
+            ops: self
+                .ops
+                .iter()
+                .map(|(k, v)| (k.clone(), Arc::clone(v)))
+                .collect(),
+            async_op_mapping: self
+                .async_op_mapping
+                .iter()
+                .map(|(k, v)| (k.clone(), Mutex::new(v.lock().unwrap().clone())))
+                .collect(),
+            cached_repo: self.cached_repo.clone(),
+            op_config_repo: self
+                .op_config_repo
+                .iter()
+                .map(|(k, v)| (k.clone(), Arc::clone(v)))
+                .collect(),
+            has_op_config_repo: self.has_op_config_repo.clone(),
+            op_config_generator_repo: self
+                .op_config_generator_repo
+                .iter()
+                .map(|(k, v)| (k.clone(), Arc::clone(v)))
+                .collect(),
+        }
+    }
+}
+
+// #[derive(Clone)]
 pub struct Vines<E: Send + Sync> {
-    ops: HashMap<String, Box<DAGOp>>,
+    ops: HashMap<String, Arc<DAGOp>>,
     async_op_mapping: HashMap<
         String,
-        BoxCloneService<
-            (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
-            OpResult,
-            &'static str,
+        Mutex<
+            BoxCloneService<
+                (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
+                OpResult,
+                &'static str,
+            >,
         >,
     >,
+    // >,
+    // async_op_mapping: HashMap<
+    //     String,
+    //     Arc<
+    //         Mutex<
+    //             dyn Service<
+    //                     (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
+    //                     Response = OpResult,
+    //                     Error = &'static str,
+    //                     Future = AsyncOpFuture,
+    //                 > + Send
+    //                 + Sync,
+    //         >,
+    //     >,
+    // >,
     // cache
     cached_repo: Arc<dashmap::DashMap<String, (Arc<OpResult>, SystemTime)>>,
     // config cache
@@ -252,7 +298,8 @@ impl<E: 'static + Send + Sync> Vines<E> {
     {
         self.async_op_mapping.insert(
             op_name.to_string(),
-            BoxCloneService::new(Vines::<E>::wrap(handler)),
+            Mutex::new(BoxCloneService::new(Vines::<E>::wrap(handler))),
+            // Arc::new(Mutex::new(Vines::<E>::wrap(handler))),
         );
     }
 
@@ -270,7 +317,8 @@ impl<E: 'static + Send + Sync> Vines<E> {
         for pair in handlers_ganerator() {
             self.async_op_mapping.insert(
                 pair.0.to_string(),
-                BoxCloneService::new(Vines::<E>::wrap(pair.1)),
+                Mutex::new(BoxCloneService::new(Vines::<E>::wrap(pair.1))),
+                // Arc::new(Mutex::new(Vines::<E>::wrap(pair.1))),
             );
             self.op_config_generator_repo
                 .insert(pair.0.to_string(), pair.2);
@@ -289,7 +337,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
         let dag_config: DAGConfig = serde_json::from_str(conf_content).unwrap_or_else(|error| {
             panic!("invalid graph {:?}", error);
         });
-        self.ops = dag_config
+        let mut ops_tmp: HashMap<String, Box<DAGOp>> = dag_config
             .ops
             .iter()
             .map(|op_config| {
@@ -325,12 +373,12 @@ impl<E: 'static + Send + Sync> Vines<E> {
                         op_config.name, dep
                     ));
                 }
-                self.ops
+                ops_tmp
                     .get_mut(&op_config.name.clone())
                     .unwrap()
                     .prevs
                     .push(dep.clone());
-                self.ops
+                ops_tmp
                     .get_mut(&dep.clone())
                     .unwrap()
                     .nexts
@@ -346,6 +394,10 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 );
             }
         }
+        self.ops = ops_tmp
+            .iter()
+            .map(|(k, v)| (k.clone(), Arc::new(*v.clone())))
+            .collect();
 
         for root in self
             .ops
@@ -391,7 +443,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
         let ops_ptr: Arc<HashMap<String, Arc<DAGOp>>> = Arc::new(
             self.ops
                 .iter()
-                .map(|(k, v)| (k.clone(), Arc::new(*v.clone())))
+                .map(|(k, v)| (k.clone(), Arc::clone(v)))
                 .collect(),
         );
         let dag_futures_ptr: Arc<
@@ -419,7 +471,12 @@ impl<E: 'static + Send + Sync> Vines<E> {
                     Arc::new(
                         self.async_op_mapping
                             .iter()
-                            .map(|(key, val)| (key.clone(), Arc::new(Mutex::new(val.clone()))))
+                            .map(|(key, val)| {
+                                (
+                                    key.clone(),
+                                    Arc::new(Mutex::new(val.lock().unwrap().clone())),
+                                )
+                            })
                             .collect(),
                     ),
                     Arc::clone(&args),
@@ -480,6 +537,22 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 >,
             >,
         >,
+        //     async_op_mapping: Arc<
+        //     HashMap<
+        //         String,
+        //         Arc<
+        //             Mutex<
+        //                 dyn Service<
+        //                         (Arc<E>, Arc<dyn Any + Sync + Send>, Arc<OpResults>),
+        //                         Response = OpResult,
+        //                         Error = &'static str,
+        //                         Future = AsyncOpFuture,
+        //                     > + Send
+        //                     + Sync,
+        //             >,
+        //         >,
+        //     >,
+        // >,
         args: Arc<E>,
         cached_repo: Arc<dashmap::DashMap<String, (Arc<OpResult>, SystemTime)>>,
         op_config_repo: Arc<HashMap<String, Arc<dyn Any + std::marker::Send + Sync>>>,
@@ -536,6 +609,11 @@ impl<E: 'static + Send + Sync> Vines<E> {
             .lock()
             .unwrap()
             .clone();
+        // let mut async_handle_fn = BoxCloneService::new(async_op_mapping
+        //     .get(&ops.get(&op).unwrap().op_config.op)
+        //     .unwrap()
+        //     .lock()
+        //     .unwrap());
         let arg_ptr = Arc::clone(&args);
 
         Arc::new(
