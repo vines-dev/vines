@@ -55,7 +55,7 @@ fn any_demo<E: Send + Sync>(graph_args: Arc<Req>, input: Arc<OpResults>) -> OpRe
     OpResult::ok(P::default())
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
     let mut dag = vines::dag::Vines::<Req>::new();
     let data = fs::read_to_string("dag.json").expect("Unable to read file");
@@ -70,9 +70,9 @@ async fn main() {
     // let my_dag = dag.make_dag(Arc::new(Req{}));
     // rt.block_on(my_dag);
 
-    static num: i32 = 10000;
+    static num: i32 = 10000000;
 
-    for i in 0..num {
+    (0..num).for_each(|x| {
         let cloned_dag = dag.clone();
         let tx2 = tx.clone();
         tokio::spawn(async move {
@@ -80,9 +80,9 @@ async fn main() {
             let fut = cloned_dag.make_dag(Arc::new(Req {}));
             let v = fut.await;
             println!("{:?}", v);
-            tx2.send(0).await;
+            tx2.send(x).await;
         });
-    }
+    });
 
     while let Some(i) = rx.recv().await {
         println!("got = {}", i);

@@ -13,7 +13,7 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use std::time::SystemTime;
@@ -447,7 +447,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 .collect(),
         );
         let dag_futures_ptr: Arc<
-            Mutex<
+            RwLock<
                 HashMap<
                     std::string::String,
                     Shared<
@@ -455,13 +455,13 @@ impl<E: 'static + Send + Sync> Vines<E> {
                     >,
                 >,
             >,
-        > = Arc::new(Mutex::new(HashMap::new()));
+        > = Arc::new(RwLock::new(HashMap::new()));
         // > = Arc::new(HashMap::new());
 
         leaf_ops.iter().for_each(|leaf| {
             let dag_futures_ptr_copy = Arc::clone(&dag_futures_ptr);
             // (*dag_futures_ptr).insert(
-            dag_futures_ptr.lock().unwrap().insert(
+            dag_futures_ptr.write().unwrap().insert(
                 leaf.to_string(),
                 Vines::<E>::dfs_op(
                     dag_futures_ptr_copy,
@@ -495,7 +495,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
 
         let mut leaves: futures::stream::FuturesOrdered<_> = leaf_ops
             .iter()
-            .map(|leaf| dag_futures_ptr.lock().unwrap().get(&*leaf).unwrap().clone())
+            .map(|leaf| dag_futures_ptr.read().unwrap().get(&*leaf).unwrap().clone())
             // .map(|leaf| dag_futures_ptr.get(&*leaf).unwrap().clone())
             .collect();
 
@@ -511,7 +511,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
     #[async_recursion]
     async fn dfs_op<'a>(
         dag_futures: Arc<
-            Mutex<
+            RwLock<
                 HashMap<
                     std::string::String,
                     Shared<
@@ -567,10 +567,10 @@ impl<E: 'static + Send + Sync> Vines<E> {
                 .prevs
                 .iter()
                 .map(|prev| {
-                    if !dag_futures.lock().unwrap().contains_key(&prev.to_string()) {
+                    if !dag_futures.read().unwrap().contains_key(&prev.to_string()) {
                         // if !dag_futures.contains_key(&prev.to_string()) {
                         let prev_ptr = Arc::new(prev);
-                        dag_futures.lock().unwrap().insert(
+                        dag_futures.write().unwrap().insert(
                             // dag_futures.insert(
                             prev.to_string(),
                             Vines::<E>::dfs_op(
@@ -586,7 +586,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                             .shared(),
                         );
                     }
-                    dag_futures.lock().unwrap().get(prev).unwrap().clone()
+                    dag_futures.read().unwrap().get(prev).unwrap().clone()
                     // dag_futures.get(prev).unwrap().clone()
                 })
                 .collect()
