@@ -34,7 +34,7 @@ struct Placeholder {} // TODO: remove
 fn calc(graph_args: Arc<Req>, p: Val, input: Arc<OpResults>) -> OpResult {
     let mut r = OpResult::default();
     let mut sum: i32 = 0;
-    println!("helllo {:?}", p.val);
+    // println!("helllo {:?}", p.val);
     for idx in 0..input.len() {
         match input.get::<i32>(idx) {
             Ok(val) => sum += val,
@@ -55,7 +55,7 @@ fn any_demo<E: Send + Sync>(graph_args: Arc<Req>, input: Arc<OpResults>) -> OpRe
     OpResult::ok(P::default())
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
+#[tokio::main(flavor = "multi_thread", worker_threads = 100)]
 async fn main() {
     let mut dag = vines::dag::Vines::<Req>::new();
     let data = fs::read_to_string("dag.json").expect("Unable to read file");
@@ -70,7 +70,7 @@ async fn main() {
     // let my_dag = dag.make_dag(Arc::new(Req{}));
     // rt.block_on(my_dag);
 
-    static num: i32 = 10000000;
+    static num: i32 = 2000000;
 
     (0..num).for_each(|x| {
         let cloned_dag = dag.clone();
@@ -79,12 +79,17 @@ async fn main() {
             // let v = cloned_dag.make_dag(Arc::new(Req {})).await;
             let fut = cloned_dag.make_dag(Arc::new(Req {}));
             let v = fut.await;
-            println!("{:?}", v);
-            tx2.send(x).await;
+            // println!("hello {:?}", );
+            tx2.send(v[0].get::<i32>().unwrap().clone()).await;
         });
     });
 
+    let mut cnt = 0;
     while let Some(i) = rx.recv().await {
-        println!("got = {}", i);
+        // println!("got = {}", i);
+        cnt += 1;
+        if cnt >= num {
+            break;
+        }
     }
 }

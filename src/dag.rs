@@ -193,29 +193,21 @@ pub struct DAGConfig {
 #[derive(Debug, Clone)]
 pub struct DAGOp {
     op_config: OpConfig,
-    prevs: Vec<String>,
-    nexts: Vec<String>,
+    prevs: Vec<usize>,
+    nexts: Vec<usize>,
 }
 
 impl<E: Send + Sync> Clone for Vines<E> {
     fn clone(&self) -> Self {
         Vines {
-            ops: self
-                .ops
-                .iter()
-                .map(|(k, v)| (k.clone(), Arc::clone(v)))
-                .collect(),
+            ops: self.ops.iter().map(|v| Arc::clone(v)).collect(),
             async_op_mapping: self
                 .async_op_mapping
                 .iter()
                 .map(|(k, v)| (k.clone(), Mutex::new(v.lock().unwrap().clone())))
                 .collect(),
             cached_repo: self.cached_repo.clone(),
-            op_config_repo: self
-                .op_config_repo
-                .iter()
-                .map(|(k, v)| (k.clone(), Arc::clone(v)))
-                .collect(),
+            op_config_repo: self.op_config_repo.iter().map(|v| Arc::clone(v)).collect(),
             has_op_config_repo: self.has_op_config_repo.clone(),
             op_config_generator_repo: self
                 .op_config_generator_repo
@@ -228,7 +220,7 @@ impl<E: Send + Sync> Clone for Vines<E> {
 
 // #[derive(Clone)]
 pub struct Vines<E: Send + Sync> {
-    ops: HashMap<String, Arc<DAGOp>>,
+    ops: Vec<Arc<DAGOp>>,
     async_op_mapping: HashMap<
         String,
         Mutex<
@@ -257,7 +249,7 @@ pub struct Vines<E: Send + Sync> {
     // cache
     cached_repo: Arc<dashmap::DashMap<String, (Arc<OpResult>, SystemTime)>>,
     // config cache
-    op_config_repo: HashMap<String, Arc<dyn Any + std::marker::Send + Sync>>,
+    op_config_repo: Vec<Arc<dyn Any + std::marker::Send + Sync>>,
     has_op_config_repo: HashMap<String, bool>,
     op_config_generator_repo: HashMap<
         String,
@@ -282,10 +274,10 @@ impl<E: 'static + Send + Sync> Default for Vines<E> {
 impl<E: 'static + Send + Sync> Vines<E> {
     pub fn new<'a>() -> Vines<E> {
         Vines {
-            ops: HashMap::new(),
+            ops: Vec::new(),
             async_op_mapping: HashMap::new(),
             cached_repo: Arc::new(DashMap::new()),
-            op_config_repo: HashMap::new(),
+            op_config_repo: Vec::new(),
             op_config_generator_repo: HashMap::new(),
             has_op_config_repo: HashMap::new(),
             // middlewares: HashMap::new(),
@@ -337,18 +329,22 @@ impl<E: 'static + Send + Sync> Vines<E> {
         let dag_config: DAGConfig = serde_json::from_str(conf_content).unwrap_or_else(|error| {
             panic!("invalid graph {:?}", error);
         });
-        let mut ops_tmp: HashMap<String, Box<DAGOp>> = dag_config
+        let ops_table: HashMap<String, usize> = dag_config
+            .ops
+            .iter()
+            .zip(0..dag_config.ops.len())
+            .map(|(op_config, idx)| (op_config.name.clone(), idx))
+            .collect();
+        let mut ops_tmp: Vec<Box<DAGOp>> = dag_config
             .ops
             .iter()
             .map(|op_config| {
-                (
-                    op_config.name.clone(),
-                    Box::new(DAGOp {
-                        op_config: op_config.clone(),
-                        nexts: Vec::new(),
-                        prevs: Vec::new(),
-                    }),
-                )
+                // op_config.name.clone(),
+                Box::new(DAGOp {
+                    op_config: op_config.clone(),
+                    nexts: Vec::new(),
+                    prevs: Vec::new(),
+                })
             })
             .collect();
 
@@ -367,45 +363,37 @@ impl<E: 'static + Send + Sync> Vines<E> {
                     return Err(format!("{:?} depend itself", op_config.name));
                 }
                 // duplicate op
-                if !self.ops.contains_key(&dep.clone()) {
+                if !ops_table.contains_key(&dep.clone()) {
                     return Err(format!(
                         "{:?}'s dependency {:?} do not exist",
                         op_config.name, dep
                     ));
                 }
-                ops_tmp
-                    .get_mut(&op_config.name.clone())
-                    .unwrap()
+                ops_tmp[ops_table.get(&op_config.name.clone()).unwrap().clone()]
                     .prevs
-                    .push(dep.clone());
-                ops_tmp
-                    .get_mut(&dep.clone())
-                    .unwrap()
+                    .push(ops_table.get(&dep.clone()).unwrap().clone());
+                ops_tmp[ops_table.get(&dep.clone()).unwrap().clone()]
                     .nexts
-                    .push(op_config.name.clone());
+                    .push(ops_table.get(&op_config.name).unwrap().clone());
             }
 
             if *self.has_op_config_repo.get(&op_config.op).unwrap() {
-                self.op_config_repo.insert(
-                    op_config.name.clone(),
+                self.op_config_repo.push(
                     self.op_config_generator_repo.get(&op_config.op).unwrap()(
                         op_config.params.clone(),
                     ),
                 );
             }
         }
-        self.ops = ops_tmp
-            .iter()
-            .map(|(k, v)| (k.clone(), Arc::new(*v.clone())))
-            .collect();
+        self.ops = ops_tmp.iter().map(|v| Arc::new(*v.clone())).collect();
 
         for root in self
             .ops
-            .values()
+            .iter()
             .filter(|op| op.prevs.is_empty())
-            .map(|op| op.op_config.name.clone())
+            .map(|op| ops_table.get(&op.op_config.name.clone()).unwrap().clone())
         {
-            if !self.validate_dag(&mut HashSet::new(), root.to_string()) {
+            if !self.validate_dag(&mut HashSet::new(), root) {
                 return Err(("have cycle in the dag").to_string());
             }
         }
@@ -413,18 +401,18 @@ impl<E: 'static + Send + Sync> Vines<E> {
         Ok(())
     }
 
-    fn validate_dag<'a>(&self, path: &mut HashSet<String>, cur: String) -> bool {
+    fn validate_dag<'a>(&self, path: &mut HashSet<usize>, cur: usize) -> bool {
         if path.contains(&cur) {
             return false;
         }
-        let op = self.ops.get(&cur).unwrap();
+        let op = &self.ops[cur];
         if op.nexts.is_empty() {
             return true;
         }
 
         path.insert(cur.clone());
         for next in &op.nexts {
-            if !self.validate_dag(&mut path.clone(), next.to_string()) {
+            if !self.validate_dag(&mut path.clone(), *next) {
                 return false;
             }
         }
@@ -432,24 +420,21 @@ impl<E: 'static + Send + Sync> Vines<E> {
     }
 
     pub async fn make_dag(&self, args: Arc<E>) -> Vec<Arc<OpResult>> {
-        let leaf_ops: HashSet<String> = self
+        let leaf_ops: HashSet<usize> = self
             .ops
-            .values()
-            .filter(|op| op.nexts.is_empty())
-            .map(|op| op.op_config.name.clone())
+            .iter()
+            .zip(0..self.ops.len())
+            .filter(|(op, idx)| op.nexts.is_empty())
+            .map(|(op, idx)| idx)
             .collect();
 
         // let have_handled: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-        let ops_ptr: Arc<HashMap<String, Arc<DAGOp>>> = Arc::new(
-            self.ops
-                .iter()
-                .map(|(k, v)| (k.clone(), Arc::clone(v)))
-                .collect(),
-        );
+        let ops_ptr: Arc<Vec<Arc<DAGOp>>> =
+            Arc::new(self.ops.iter().map(|v| Arc::clone(v)).collect());
         let dag_futures_ptr: Arc<
             RwLock<
                 HashMap<
-                    std::string::String,
+                    usize,
                     Shared<
                         Pin<Box<dyn futures::Future<Output = Arc<OpResult>> + std::marker::Send>>,
                     >,
@@ -462,12 +447,12 @@ impl<E: 'static + Send + Sync> Vines<E> {
             let dag_futures_ptr_copy = Arc::clone(&dag_futures_ptr);
             // (*dag_futures_ptr).insert(
             dag_futures_ptr.write().unwrap().insert(
-                leaf.to_string(),
+                *leaf,
                 Vines::<E>::dfs_op(
                     dag_futures_ptr_copy,
                     // Arc::clone(&have_handled),
                     Arc::clone(&ops_ptr),
-                    leaf.clone(),
+                    *leaf,
                     Arc::new(
                         self.async_op_mapping
                             .iter()
@@ -484,7 +469,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                     Arc::new(
                         self.op_config_repo
                             .iter()
-                            .map(|(key, val)| (key.clone(), Arc::clone(val)))
+                            .map(|val| Arc::clone(val))
                             .collect(),
                     ),
                 )
@@ -513,7 +498,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
         dag_futures: Arc<
             RwLock<
                 HashMap<
-                    std::string::String,
+                    usize,
                     Shared<
                         Pin<Box<dyn futures::Future<Output = Arc<OpResult>> + std::marker::Send>>,
                     >,
@@ -521,8 +506,8 @@ impl<E: 'static + Send + Sync> Vines<E> {
             >,
         >,
         // have_handled: Arc<Mutex<HashSet<String>>>,
-        ops: Arc<HashMap<String, Arc<DAGOp>>>,
-        op: String,
+        ops: Arc<Vec<Arc<DAGOp>>>,
+        op: usize,
         async_op_mapping: Arc<
             HashMap<
                 String,
@@ -555,28 +540,26 @@ impl<E: 'static + Send + Sync> Vines<E> {
         // >,
         args: Arc<E>,
         cached_repo: Arc<dashmap::DashMap<String, (Arc<OpResult>, SystemTime)>>,
-        op_config_repo: Arc<HashMap<String, Arc<dyn Any + std::marker::Send + Sync>>>,
+        op_config_repo: Arc<Vec<Arc<dyn Any + std::marker::Send + Sync>>>,
     ) -> Arc<OpResult> {
         let mut deps = futures::stream::FuturesOrdered::new();
-        if ops.get(&op).unwrap().prevs.is_empty() {
+        if ops[op].prevs.is_empty() {
             deps.push(async { Arc::new(OpResult::default()) }.boxed().shared());
         } else {
-            deps = ops
-                .get(&op)
-                .unwrap()
+            deps = ops[op]
                 .prevs
                 .iter()
                 .map(|prev| {
-                    if !dag_futures.read().unwrap().contains_key(&prev.to_string()) {
+                    if !dag_futures.read().unwrap().contains_key(&prev) {
                         // if !dag_futures.contains_key(&prev.to_string()) {
-                        let prev_ptr = Arc::new(prev);
+                        // let prev_ptr = Arc::new(prev);
                         dag_futures.write().unwrap().insert(
                             // dag_futures.insert(
-                            prev.to_string(),
+                            *prev,
                             Vines::<E>::dfs_op(
                                 Arc::clone(&dag_futures),
                                 Arc::clone(&ops),
-                                prev_ptr.to_string(),
+                                *prev,
                                 Arc::clone(&async_op_mapping),
                                 Arc::clone(&args),
                                 Arc::clone(&cached_repo),
@@ -602,9 +585,9 @@ impl<E: 'static + Send + Sync> Vines<E> {
             inner: deps_collector,
         });
 
-        let params_ptr = op_config_repo.get(&op).unwrap();
+        let params_ptr = &op_config_repo[op];
         let mut async_handle_fn = async_op_mapping
-            .get(&ops.get(&op).unwrap().op_config.op)
+            .get(&ops[op].op_config.op)
             .unwrap()
             .lock()
             .unwrap()
@@ -623,7 +606,7 @@ impl<E: 'static + Send + Sync> Vines<E> {
                     .await
                 {
                     Ok(async_result) => {
-                        if async_result.is_err() && ops.get(&op).unwrap().op_config.necessary {
+                        if async_result.is_err() && ops[op].op_config.necessary {
                             return OpResult::default();
                         } else {
                             async_result
