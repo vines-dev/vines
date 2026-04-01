@@ -1,0 +1,145 @@
+{
+    "ops": [
+        {
+            "name": "1_op",
+            "op": "calc",
+            "deps": [
+                "2_op",
+                "3_op"
+            ],
+            "params": {
+                "val": 1
+            }
+        },
+        {
+            "name": "2_op",
+            "op": "calc",
+            "deps": [
+                "4_op",
+                "5_op"
+            ],
+            "params": {
+                "val": 2
+            }
+        },
+        {
+            "name": "3_op",
+            "op": "calc",
+            "deps": [
+                "6_op",
+                "7_op"
+            ],
+            "params": {
+                "val": 3
+            }
+        },
+        {
+            "name": "4_op",
+            "op": "calc",
+            "deps": [
+                "8_op",
+                "9_op"
+            ],
+            "params": {
+                "val": 4
+            }
+        },
+        {
+            "name": "5_op",
+            "op": "calc",
+            "deps": [
+                "10_op",
+                "11_op"
+            ],
+            "params": {
+                "val": 5
+            }
+        },
+        {
+            "name": "6_op",
+            "op": "calc",
+            "deps": [
+                "12_op",
+                "13_op"
+            ],
+            "params": {
+                "val": 6
+            }
+        },
+        {
+            "name": "7_op",
+            "op": "calc",
+            "deps": [
+                "14_op",
+                "15_op"
+            ],
+            "params": {
+                "val": 7
+            }
+        },
+        {
+            "name": "8_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 8
+            }
+        },
+        {
+            "name": "9_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 9
+            }
+        },
+        {
+            "name": "10_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 10
+            }
+        },
+        {
+            "name": "11_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 11
+            }
+        },
+        {
+            "name": "12_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 12
+            }
+        },
+        {
+            "name": "13_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 13
+            }
+        },
+        {
+            "name": "14_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 14
+            }
+        },
+        {
+            "name": "15_op",
+            "op": "calc",
+            "deps": [],
+            "params": {
+                "val": 15
+            }
+        }
+    ]
+}

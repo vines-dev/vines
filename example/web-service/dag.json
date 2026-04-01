@@ -1,0 +1,161 @@
+{
+    "ops": [{
+            "name": "start_op",
+            "op": "redis_con_op",
+            "deps": []
+        },
+        {
+            "name": "1_get_op",
+            "op": "redis_op",
+            "deps": [
+                "start_op"
+            ],
+            "params": {
+                "key": "1",
+                "name": "1_get_op"
+            }
+        },
+        {
+            "name": "2_get_op",
+            "op": "redis_op",
+            "deps": [
+                "start_op"
+            ],
+            "params": {
+                "key": "2",
+                "name": "2_get_op"
+            }
+        },
+        {
+            "name": "3_get_op",
+            "op": "redis_op",
+            "deps": [
+                "start_op"
+            ],
+            "params": {
+                "key": "3",
+                "name": "3_get_op"
+            }
+        },
+        {
+            "name": "4_get_op",
+            "op": "redis_op",
+            "deps": [
+                "start_op"
+            ],
+            "params": {
+                "key": "4",
+                "name": "4_get_op"
+            }
+        },
+        {
+            "name": "1_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "1_get_op"
+            ],
+            "params": {
+                "key": "5",
+                "name": "1_set_op"
+            }
+        },
+        {
+            "name": "2_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "2_get_op"
+            ],
+            "params": {
+                "key": "6",
+                "name": "2_set_op"
+            }
+        },
+        {
+            "name": "3_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "3_get_op"
+            ],
+            "params": {
+                "key": "7",
+                "name": "3_set_op"
+            }
+        },
+        {
+            "name": "4_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "4_get_op"
+            ],
+            "params": {
+                "key": "8",
+                "name": "4_set_op"
+            }
+        },
+        {
+            "name": "5_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "1_get_op",
+                "1_set_op"
+            ],
+            "params": {
+                "key": "8",
+                "name": "5_set_op"
+            }
+        },
+        {
+            "name": "6_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "2_get_op",
+                "2_set_op"
+            ],
+            "params": {
+                "key": "8",
+                "name": "6_set_op"
+            }
+        },
+        {
+            "name": "7_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "3_get_op",
+                "3_set_op",
+                "6_set_op"
+            ],
+            "params": {
+                "key": "8",
+                "name": "7_set_op"
+            }
+        },
+        {
+            "name": "8_set_op",
+            "op": "redis_set_op",
+            "deps": [
+                "4_get_op",
+                "4_set_op",
+                "5_set_op",
+                "1_get_op"
+            ],
+            "params": {
+                "key": "8",
+                "name": "8_set_op"
+            }
+        },
+        {
+            "name": "pack_op",
+            "op": "pack_op",
+            "deps": [
+                "1_set_op",
+                "2_set_op",
+                "3_set_op",
+                "4_set_op",
+                "5_set_op",
+                "6_set_op",
+                "7_set_op",
+                "8_set_op"
+            ]
+        }
+    ]
+}
